@@ -1,0 +1,136 @@
+#!/usr/bin/perl
+use strict;
+use Socket;
+use Sys::Hostname qw(hostname);
+use IO::Socket::INET;
+use Encode 'from_to';
+
+my $local_ip = get_local_ip_address();
+
+my $is_desc = 0;
+
+if( $ARGV[0] eq '-d' ) {
+        $is_desc = 1;
+        shift @ARGV;
+}
+
+if( $#ARGV < 1 ) {
+        my @conlist = ();
+
+        if( $#ARGV eq 0 and -f $ARGV[0] ) {
+                open FD, $ARGV[0];
+                while( my $line = <FD> ) {
+                        chomp $line;
+                        push @conlist, $line;
+                }
+        }
+        else {
+                if( $is_desc ) {
+                        print "Please enter \"<ip> <port> <description>\" for each line . To finish , enter \".\"\n>> ";
+                }
+                else {
+                        print "Please enter \"<ip> <port>\" for each line . To finish , enter \".\"\n>> ";
+                }
+                while( my $line = <STDIN> ) {
+                        chomp $line;
+                        if( $line eq '.' ) {
+                                last;
+                        }
+
+                        push @conlist, $line;
+                        print ">> ";
+                }
+        }
+
+        &printhead;
+
+        for my $line (@conlist) {
+                my @con = split /\s+/, $line;
+                if( $#con < 1 ) {
+                        next;
+                }
+                &contest( @con );
+        }
+}
+else {
+        &printhead;
+        &contest( @ARGV );
+}
+
+
+sub contest {
+        my $server = shift @_;
+        my $port   = shift @_;
+        my $desc   = "@_";
+
+        my $sock = new IO::Socket::INET(
+            PeerAddr => $server,
+            PeerPort => $port,
+            Proto => 'tcp',
+            Timeout => 1,
+            );
+
+        &printres( $desc, $server, $port, defined $sock, $! );
+
+        if( defined $sock ) {
+                close($sock) or die "close: $!";
+        }
+}
+
+sub printhead {
+        print "\n";
+        if( $is_desc ) {
+                printf "%-15s %-20s %-16s %-25s %-5s %-4s %s\n", "Test time", "Desc", "Source IP", "Target IP", "Port", "Res.", "Desc";
+                print  "---------------------------------------------------------------------------------------------------------------\n";
+        }
+        else {
+                printf "%-15s %-16s %-25s %-5s %-4s %s\n", "Test time", "Source IP", "Target IP", "Port", "Res.", "Desc";
+                print  "------------------------------------------------------------------------------------------\n";
+        }
+}
+
+sub printres {
+        my ($desc, $server, $port, $res, $errstr) = @_;
+
+        my ($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst) = localtime();
+
+        if( $is_desc ) {
+                from_to($desc, 'utf-8', 'euc-kr' );
+                my $message = sprintf( "%-20s", $desc );
+
+                from_to($message, 'euc-kr', 'utf-8' );
+
+                if( $res ) {
+                        printf "%02d/%02d %02d:%02d:%02d  %s %-16s %-25s %-5s %-4s\n", 
+                               $mon+1, $mday, $hour, $min, $sec, $message, $local_ip, $server, $port, "Ok";
+                }
+                else {
+                        printf "%02d/%02d %02d:%02d:%02d  %s %-16s %-25s %-5s %-4s %s\n", 
+                               $mon+1, $mday, $hour, $min, $sec, $message, $local_ip, $server, $port, "Fail", $errstr;
+                }
+        }
+        else {
+                if( $res ) {
+                        printf "%02d/%02d %02d:%02d:%02d  %-16s %-25s %-5s %-4s\n", 
+                               $mon+1, $mday, $hour, $min, $sec, $local_ip, $server, $port, "Ok";
+                }
+                else {
+                        printf "%02d/%02d %02d:%02d:%02d  %-16s %-25s %-5s %-4s %s\n", 
+                               $mon+1, $mday, $hour, $min, $sec, $local_ip, $server, $port, "Fail", $errstr;
+                }
+        }
+}
+
+sub get_local_ip_address {
+        my $socket = IO::Socket::INET->new(
+                        Proto       => 'udp',
+                        PeerAddr    => '198.41.0.4', # a.root-servers.net
+                        PeerPort    => '53', # DNS
+                        );
+
+        # A side-effect of making a socket connection is that our IP address
+        # is available from the 'sockhost' method
+        my $local_ip_address = $socket->sockhost;
+
+        return $local_ip_address;
+}

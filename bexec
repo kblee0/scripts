@@ -1,0 +1,123 @@
+#!/usr/bin/perl
+use POSIX qw(strftime);
+
+$opt_n = 0;
+$opt_f = 0;
+
+&Getopts( 'n' );
+
+if( $#ARGV < 0 ) {
+	print STDERR "usage : $0 [-n] <command>\n";
+	exit( 1 );
+}
+
+# initilize signal
+$KillStatus    = 1;
+$SIG{ 'INT' }  = 'signal_handler';
+$SIG{ 'TERM' } = 'signal_handler';
+$SIG{ 'QUIT' } = 'signal_handler';
+
+$starttime = strftime( '%Y/%m/%d %H:%M:%S', localtime );
+
+&InitDeamon;
+
+if( $opt_n ) {
+	exec( @ARGV );
+}
+$ret = WEXITSTATUS( system( @ARGV ) );
+
+print STDERR "\a\nbexec message\b";
+print STDERR "command     : @ARGV\n";
+print STDERR "return code : $ret\n";
+print STDERR "start time  : $starttime\n";
+print STDERR "end time    : ", strftime( '%Y/%m/%d %H:%M:%S', localtime ), "\n";
+
+sub WEXITSTATUS {
+	my( $_ret_stat ) = @_;
+	return	( int( ( ($_ret_stat>>8)&0xFF) ) );
+}
+# signal handler for sigtem, sigint and sigquit
+
+sub signal_handler {
+	local( $signame ) = @_;
+	print STDERR ">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>\n";
+	print STDERR "Notice : Caught a SIG$signame--shutting down\n";
+	print STDERR "Time   : ", strftime( '%Y/%m/%d %H:%M:%S', localtime ), "\n";
+	print STDERR ">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>\n";
+	exit( 9 );
+}
+
+
+# initilize for background process
+
+sub InitDeamon {
+	if( ( $childpid = fork ) < 0 ) {
+		die "Error : can't fork first child\n";
+	}
+	elsif ( $childpid > 0 ) {
+		exit( 0 );
+	}
+	setpgrp;
+	
+	# ignore for hangup
+	
+	local $SIG{'HUP'} = 'IGNORE';
+
+	if( ( $childpid = fork ) < 0 ) {
+		die "Error : can't fork second child\n";
+	}
+	elsif ( $childpid > 0 ) {
+		exit( 0 );
+	}
+
+	umask( 0 );
+	local $SIG{'CLD'} = 'IGNORE';
+	return	( $$ );
+}
+
+# Usage:
+#      do Getopts('a:bc');  # -a takes arg. -b & -c not. Sets opt_* as a
+#                           #  side effect.
+
+sub Getopts {
+    local($argumentative) = @_;
+    local(@args,$_,$first,$rest);
+    local($errs) = 0;
+    local($[) = 0;
+
+    @args = split( / */, $argumentative );
+    while(@ARGV && ($_ = $ARGV[0]) =~ /^-(.)(.*)/) {
+	($first,$rest) = ($1,$2);
+	$pos = index($argumentative,$first);
+	if($pos >= $[) {
+	    if(defined $args[$pos+1] and $args[$pos+1] eq ':') {
+		shift(@ARGV);
+		if($rest eq '') {
+		    ++$errs unless @ARGV;
+		    $rest = shift(@ARGV);
+		}
+		eval "\$opt_$first = \$rest;";
+	    }
+	    else {
+		eval "\$opt_$first = 1";
+		if($rest eq '') {
+		    shift(@ARGV);
+		}
+		else {
+		    $ARGV[0] = "-$rest";
+		}
+	    }
+	}
+	else {
+	    print STDERR "Unknown option: $first\n";
+	    ++$errs;
+	    if($rest ne '') {
+		$ARGV[0] = "-$rest";
+	    }
+	    else {
+		shift(@ARGV);
+	    }
+	}
+    }
+    $errs == 0;
+}
